@@ -101,6 +101,18 @@ fn the_style_option_makes_a_style_current() {
 }
 
 #[test]
+fn a_justification_that_is_no_option_is_asked_again() {
+    let mut s = Session::new();
+    lines(&mut s, &["TEXT", "J"]);
+    let _ = s.cmdline("X");
+    assert!(s.log.iter().any(|l| l.contains("Invalid option keyword.")), "{:?}", s.log);
+    assert!(s.prompt_text().contains("Enter an option"), "asked again: {}", s.prompt_text());
+    s.cmdline("MC").unwrap();
+    lines(&mut s, &["0,0", "2", "0", "Centered", ""]);
+    assert_eq!(texts(&s)[0].halign, cadcraft_engine::doc::HAlign::Center);
+}
+
+#[test]
 fn enter_at_the_start_point_continues_below_the_last_text() {
     let mut s = Session::new();
     lines(&mut s, &["TEXT", "J", "MC", "10,10", "2", "90", "First", ""]);
