@@ -113,6 +113,10 @@ pub(super) fn check_name(name: &str) -> Result<String> {
 /// Save the current settings as style `name` and make it current.
 fn save(s: &mut Session, name: &str, annotative: Option<bool>, replace: bool) -> Result<Value> {
     let name = check_name(name)?;
+    // Refused before the drawing is touched: a failed call leaves no (empty) undo step.
+    if !replace && s.doc()?.dim_style(&name).is_some() {
+        return Err(bad(CMD, format!("a dimension style `{name}` already exists")));
+    }
     let d = s.doc_mut()?;
     let mut st = current_settings(d);
     if let Some(a) = annotative {
@@ -139,8 +143,8 @@ fn save(s: &mut Session, name: &str, annotative: Option<bool>, replace: bool) ->
 
 /// Make style `name` current (its overrides go).
 fn restore(s: &mut Session, name: &str) -> Result<Value> {
+    let n = s.doc()?.dim_style(name).map(|t| t.name.clone()).ok_or_else(|| bad(CMD, format!("no dimension style `{name}`")))?;
     let d = s.doc_mut()?;
-    let n = d.dim_style(name).map(|t| t.name.clone()).ok_or_else(|| bad(CMD, format!("no dimension style `{name}`")))?;
     d.header.set_str("DIMSTYLE", &n);
     d.sync_dim_vars();
     Ok(json!({ "current": n }))
@@ -240,11 +244,15 @@ fn run_overrides(s: &mut Session, p: &Value) -> Result<Value> {
     if !rejected.is_empty() {
         return Err(bad("dimstyle.overrides", format!("unusable values for {}", rejected.join(", "))));
     }
+    // The values as the style took them (a lineweight named ByLayer is -1, ...): what the
+    // header variables hold, so writing them can't fail halfway.
+    let taken = serde_json::to_value(&base).unwrap_or(Value::Null);
     if clear {
         s.doc_mut()?.sync_dim_vars();
     }
     for (field, v) in &given {
         let Some((var, _)) = cadcraft_doc::DIMVARS.iter().find(|(_, f)| f == field) else { continue };
+        let v = taken.get(field.as_str()).unwrap_or(v);
         // Colors are stored as color numbers in the header.
         let v = match serde_json::from_value::<cadcraft_color::Color>(v.clone()).ok().or_else(|| v.as_str().and_then(cadcraft_color::Color::parse)) {
             Some(c) if field.ends_with("Color") => json!(c.to_aci()),
