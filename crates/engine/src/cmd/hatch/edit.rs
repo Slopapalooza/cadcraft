@@ -143,21 +143,8 @@ fn separate(s: &mut Session, handle: Handle) -> Result<Vec<Handle>> {
 
 /// Pattern, scale and angle (degrees) from the parameters.
 fn properties(h: &mut Hatch, p: &Value) {
-    if let Some(v) = str_param(p, "pattern").map(str::trim).filter(|v| !v.is_empty()) {
-        h.pattern = v.to_ascii_uppercase();
-        h.solid = h.pattern == "SOLID";
-        // A named pattern, SOLID included, replaces the gradient fill; the renderer draws the
-        // gradient first when it is set.
-        h.gradient = None;
-        if !h.solid {
-            // A library pattern is drawn from the library; a loaded .pat pattern brings its lines;
-            // any other name is the hatch's own and keeps its definition.
-            if cadcraft_doc::library::pattern(&h.pattern).is_some() {
-                h.pattern_lines.clear();
-            } else if let Some(user) = super::patfile::user_pattern(&h.pattern) {
-                h.pattern_lines = user.lines;
-            }
-        }
+    if let Some(v) = str_param(p, "pattern") {
+        set_pattern(h, v);
     }
     if let Some(x) = p.get("scale").and_then(Value::as_f64).filter(|x| x.is_finite() && *x > 0.0) {
         h.scale = x;
@@ -165,6 +152,30 @@ fn properties(h: &mut Hatch, p: &Value) {
     if let Some(x) = p.get("angle").and_then(Value::as_f64).filter(|x| x.is_finite()) {
         h.angle = x.to_radians();
     }
+}
+
+/// Give `h` the pattern called `name` (HATCHEDIT's and Properties' pattern edit); false, and
+/// nothing changes, for a blank name.
+pub(crate) fn set_pattern(h: &mut Hatch, name: &str) -> bool {
+    let name = name.trim();
+    if name.is_empty() {
+        return false;
+    }
+    h.pattern = name.to_ascii_uppercase();
+    h.solid = h.pattern == "SOLID";
+    // A named pattern, SOLID included, replaces the gradient fill; the renderer draws the
+    // gradient first when it is set.
+    h.gradient = None;
+    if !h.solid {
+        // A library pattern is drawn from the library; a loaded .pat pattern brings its lines;
+        // any other name is the hatch's own and keeps its definition.
+        if cadcraft_doc::library::pattern(&h.pattern).is_some() {
+            h.pattern_lines.clear();
+        } else if let Some(user) = super::patfile::user_pattern(&h.pattern) {
+            h.pattern_lines = user.lines;
+        }
+    }
+    true
 }
 
 /// HATCHEDIT's `gradient`: the fields to change, all checked before any hatch is touched.
