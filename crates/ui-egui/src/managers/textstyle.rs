@@ -120,7 +120,8 @@ fn face_of<'a>(font: &str, fonts: &'a [FontEntry]) -> Option<&'a FontEntry> {
     if f.is_empty() || is_shx(&f) {
         return None;
     }
-    let stem = |s: &str| s.rsplit_once('.').map_or(s.to_string(), |(a, _)| a.to_string());
+    // Any case: font files are often named in capitals (ARIALN.TTF), and the renderer finds them so.
+    let stem = |s: &str| s.rsplit_once('.').map_or(s, |(a, _)| a).to_ascii_lowercase();
     fonts
         .iter()
         .find(|e| e.file.eq_ignore_ascii_case(&f) || stem(&e.file) == stem(&f))
@@ -614,4 +615,18 @@ fn sample(d: &Drawing, style: &TextStyle, w: u32, h: u32, dark: bool) -> Option<
     )?;
     let img = image::load_from_memory(&png).ok()?.to_rgba8();
     Some(egui::ColorImage::from_rgba_unmultiplied([img.width() as usize, img.height() as usize], img.as_raw()))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_font_named_without_its_extension_is_found_in_any_case() {
+        let fonts = [FontEntry { family: "Arial Narrow".into(), style: "Regular".into(), file: "ARIALN.TTF".into() }];
+        for name in ["arialn", "ARIALN", "arialn.ttf", "Arial Narrow"] {
+            assert_eq!(face_of(name, &fonts).map(|e| e.file.as_str()), Some("ARIALN.TTF"), "{name}");
+        }
+        assert!(face_of("arial", &fonts).is_none());
+    }
 }
