@@ -182,7 +182,10 @@ fn described_row(
                         ("White", 7),
                     ] {
                         if ui.button(crate::i18n::t(n)).clicked() {
-                            picked = Some(json!(c));
+                            // The row shows a color by name: picking the one it has is no edit.
+                            if row.varies || row.value != json!(n) {
+                                picked = Some(json!(c));
+                            }
                             ui.close();
                         }
                     }
