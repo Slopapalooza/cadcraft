@@ -895,17 +895,22 @@ fn class_records_have_instance_counts_from_2004_only() {
         }
         assert!(out.in_section("CLASSES", "CLASS").iter().any(|c| s(c, 1) == "ACME_OBJECT"));
     }
-    // Binary R2000 drops it from the kept class too.
-    let binary = write_with(&d, "x.dxf", &SaveOptions { version: Some(Version::R2000), binary: true }).expect("save binary R2000");
-    let tags = cadcraft_dxf::parse(&binary).expect("parse binary R2000");
-    let (_, acme) = sections(&tags)
-        .into_iter()
-        .filter(|sec| sec.name == "CLASSES")
-        .flat_map(|sec| records(&sec.tags))
-        .find(|(kind, class)| kind == "CLASS" && s(class, 1) == "ACME_OBJECT")
-        .expect("ACME_OBJECT CLASS");
-    let codes: Vec<i32> = acme.iter().map(|t| t.code).collect();
-    assert_eq!(codes, [1, 2, 3, 90, 280, 281], "binary R2000 ACME_OBJECT CLASS");
+    // Binary files the same way: none at R2000, the count at 2018.
+    let acme = |version: Version| {
+        let bytes = write_with(&d, "x.dxf", &SaveOptions { version: Some(version), binary: true }).expect("save binary");
+        let tags = cadcraft_dxf::parse(&bytes).expect("parse binary");
+        let class = sections(&tags)
+            .into_iter()
+            .filter(|sec| sec.name == "CLASSES")
+            .flat_map(|sec| records(&sec.tags))
+            .find(|(kind, class)| kind == "CLASS" && s(class, 1) == "ACME_OBJECT")
+            .map(|(_, class)| class)
+            .expect("ACME_OBJECT CLASS");
+        let codes: Vec<i32> = class.iter().map(|t| t.code).collect();
+        (codes, class.iter().find(|t| t.code == 91).map(Tag::i64))
+    };
+    assert_eq!(acme(Version::R2000), (vec![1, 2, 3, 90, 280, 281], None), "binary R2000 ACME_OBJECT CLASS");
+    assert_eq!(acme(Version::R2018), (vec![1, 2, 3, 90, 91, 280, 281], Some(1)), "binary 2018 ACME_OBJECT CLASS");
     let r2018 = write_with(&d, "x.dxf", &SaveOptions { version: Some(Version::R2018), binary: false }).expect("save 2018");
     let out = Out::new(std::str::from_utf8(&r2018).expect("UTF-8"));
     let counts = out.counts();
