@@ -249,50 +249,53 @@ pub(super) fn tables(tags: &[Tag], d: &mut Drawing, rx: &mut Rx) {
                     None => d.ucss.push(u),
                 }
             }
-            "DIMSTYLE" => {
-                let name = t.s(2).unwrap_or_default();
-                if name.is_empty() || d.dim_styles.len() >= MAX_OBJECTS {
-                    continue;
-                }
-                // Every variable with a DIMSTYLE group code; values the style can't take are
-                // left at their defaults.
-                let mut fields = serde_json::Map::new();
-                // The first 70 is the record's flags; a later one is DIMTFILLCLR.
-                let flags = tg.iter().position(|x| x.code == 70);
-                for (i, tag) in tg.iter().enumerate().take_while(|(_, x)| x.code < 1000) {
-                    if Some(i) == flags {
-                        continue;
-                    }
-                    let Some((field, kind)) = crate::dxf_ext::dim_field(tag.code) else { continue };
-                    if let Some(v) = crate::dxf_ext::decode(kind, tag, &rx.styles, &rx.brs, &rx.ltypes) {
-                        fields.insert(field.to_string(), v);
-                    }
-                }
-                // A group value the style can't take leaves its variable to the xdata below.
-                let refused = DimStyle::default().apply_fields(&fields);
-                fields.retain(|k, _| !refused.contains(k));
-                // Then what the groups leave out (R2000 has no groups for the newer variables):
-                // AutoCAD's jog angle xdata first, since AutoCAD keeps its own xdata current but
-                // leaves CADCraft's as it was, then CADCraft's.
-                if let Some(jog) = crate::dxf_ext::read_jog_xdata(&tg) {
-                    fields.entry("jogAngle").or_insert(serde_json::json!(jog));
-                }
-                for (k, v) in crate::dxf_ext::read_newer_dimvars(&tg, &rx.styles, &rx.brs, &rx.ltypes) {
-                    fields.entry(k).or_insert(v);
-                }
-                let mut st = DimStyle { name: name.clone(), annotative: annotative(&tg), ..DimStyle::default() };
-                st.apply_fields(&fields);
-                match d.dim_styles.iter_mut().find(|s| s.name.eq_ignore_ascii_case(&name)) {
-                    Some(x) => *x = st,
-                    None => d.dim_styles.push(st),
-                }
-            }
+            "DIMSTYLE" => dimstyle_record(d, &tg, rx),
             "VPORT" => vport_record(d, &t),
             _ => {}
         }
     }
     // One *Active viewport is no tiling: the view is the editor's (it zooms to the extents).
     d.vports.retain(|c| c.tiles.len() > usize::from(c.is_active()));
+}
+
+/// A DIMSTYLE record: a new style, or one that replaces the drawing's style of that name.
+fn dimstyle_record(d: &mut Drawing, tg: &[Tag], rx: &Rx) {
+    let name = T(tg).s(2).unwrap_or_default();
+    if name.is_empty() || d.dim_styles.len() >= MAX_OBJECTS {
+        return;
+    }
+    // Every variable with a DIMSTYLE group code; values the style can't take are
+    // left at their defaults.
+    let mut fields = serde_json::Map::new();
+    // The first 70 is the record's flags; a later one is DIMTFILLCLR.
+    let flags = tg.iter().position(|x| x.code == 70);
+    for (i, tag) in tg.iter().enumerate().take_while(|(_, x)| x.code < 1000) {
+        if Some(i) == flags {
+            continue;
+        }
+        let Some((field, kind)) = crate::dxf_ext::dim_field(tag.code) else { continue };
+        if let Some(v) = crate::dxf_ext::decode(kind, tag, &rx.styles, &rx.brs, &rx.ltypes) {
+            fields.insert(field.to_string(), v);
+        }
+    }
+    // A group value the style can't take leaves its variable to the xdata below.
+    let refused = DimStyle::default().apply_fields(&fields);
+    fields.retain(|k, _| !refused.contains(k));
+    // Then what the groups leave out (R2000 has no groups for the newer variables):
+    // AutoCAD's jog angle xdata first, since AutoCAD keeps its own xdata current but
+    // leaves CADCraft's as it was, then CADCraft's.
+    if let Some(jog) = crate::dxf_ext::read_jog_xdata(tg) {
+        fields.entry("jogAngle").or_insert(serde_json::json!(jog));
+    }
+    for (k, v) in crate::dxf_ext::read_newer_dimvars(tg, &rx.styles, &rx.brs, &rx.ltypes) {
+        fields.entry(k).or_insert(v);
+    }
+    let mut st = DimStyle { name: name.clone(), annotative: annotative(tg), ..DimStyle::default() };
+    st.apply_fields(&fields);
+    match d.dim_styles.iter_mut().find(|s| s.name.eq_ignore_ascii_case(&name)) {
+        Some(x) => *x = st,
+        None => d.dim_styles.push(st),
+    }
 }
 
 fn index_table_handles(recs: &[(String, Vec<Tag>)], rx: &mut Rx) {
