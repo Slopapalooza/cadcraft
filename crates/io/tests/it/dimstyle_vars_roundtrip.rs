@@ -407,3 +407,19 @@ fn an_unusable_group_leaves_the_variable_to_the_xdata() {
     lines.splice(name + 2..name + 2, [" 90", "7"]);
     assert_eq!(read_dxf(lines.join("\r\n").as_bytes()).unwrap().dim_style("Detail").unwrap(), &styled());
 }
+
+/// A DWG older than 2007 has no jog angle in its DIMSTYLE objects, and the bridge used to give
+/// every style a group 50 of 5° when it read one. Read as degrees, every style then jogged at
+/// 5°; now Standard keeps 45° and a style's own angle comes back from its xdata.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn older_dwg_keeps_each_styles_jog_angle() {
+    for version in [Version::R2000, Version::R2004] {
+        let opts = SaveOptions { version: Some(version), binary: false };
+        let dwg = cadcraft_io::write_with(&drawing(), "x.dwg", &opts).unwrap();
+        let back = cadcraft_io::read(&dwg, "x.dwg").unwrap();
+        for (name, deg) in [("Standard", 45.0), ("Detail", 30.0)] {
+            assert_eq!(back.dim_style(name).unwrap().jog_angle, deg, "{name} in {version:?}");
+        }
+    }
+}
